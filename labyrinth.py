@@ -19,22 +19,19 @@ import numpy as np # this is just to transform example image to rgba
   
 class Labyrinth(PyQt5.QtWidgets.QWidget):
     
-    def __init__(self, scenary_filename=None, layout_filename=None, avatar_filename=None, start_pos=None):
-        '''
-        Initializes an Labyrinth without the image.
-
-        Parameters
-        ----------
-        size : two-element tupple for the size of the labyrinth.
-
-        '''
+    def __init__(self, 
+                 scenary_filename=None, 
+                 layout_filename=None, 
+                 avatar_filename=None, 
+                 start_pos=None,
+                 things = None):
         
         super().__init__() 
         
         # Pixmap layers
         if scenary_filename is None:
             self.scenaryPix = PyQt5.QtGui.QPixmap(1500, 1200)
-            self.scenaryPix.fill(PyQt5.QtGui.QColor(225,225,225,225))
+            self.scenaryPix.fill(PyQt5.QtGui.QColor(200,225,225,225))
         else:
             self.scenaryPix = PyQt5.QtGui.QPixmap(scenary_filename)
         
@@ -55,17 +52,21 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
             self.avatarPix.fill(PyQt5.QtGui.QColor(255, 0, 0, 255))
         else:
             self.avatarPix = PyQt5.QtGui.QPixmap(avatar_filename)
+                  
+        if things is None:
+            self.thingsPix = []
+            self.thingsPos = np.empty((2,0))
+        else:
+            self.addThings(things)
   
-        self.setWindowTitle('Welcome til Ellas og Vedranas labirint!')
+        self.setWindowTitle('Velkommen til Ellas og Vedranas labirint!')
           
-        # Atributes relating to the transformation between widget 
-        # coordinate system and image coordinate system
-        self.zoomFactor = 1 # accounts for resizing of the widget and for zooming in the part of the image
-        self.padding = PyQt5.QtCore.QPoint(0, 0) # padding when aspect ratio of image and widget does not match
+        # Atributes for transformation between the widget and the image.
+        self.zoomFactor = 1 # widget/image size
+        self.padding = PyQt5.QtCore.QPoint(0, 0) # padding for perserving  aspect ratio of image
         self.target = PyQt5.QtCore.QRect(0, 0, self.width(),self.height()) # part of the target being drawn on
         self.source = PyQt5.QtCore.QRect(0, 0, 
                 self.scenaryPix.width(), self.scenaryPix.height()) # part of the image being drawn
-        self.offset = PyQt5.QtCore.QPoint(0, 0) # offset between image center and area of interest center
        
         # Flags needed to keep track of different states
         self.newZoomValues = None
@@ -82,6 +83,7 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
         
         self.spacePressed = False
         self.multiplier = 5
+        self.moving = None # to handle moving with space pressed
         
         # Timer for displaying text overlay
         self.timer = PyQt5.QtCore.QTimer()
@@ -93,11 +95,16 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
                 4*self.scenaryPix.height()/3),1) # downsize if larger than (2000,1500)
         self.resize(initial_zoom*self.scenaryPix.width(), 
                     initial_zoom*self.scenaryPix.height())
+        
         self.show()
         
         self.showInfo(self.introText(),5000)
         print(self.introText(False))
             
+    def addThing(self, things):
+        for i in range(len(things)):
+            self.things.append((PyQt5.QtGui.QPixmap(things[i]['filename']), things[i]['position']))
+    
     
     def fixPosition(self):
         pos_c = self.position.x()
@@ -107,16 +114,17 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
         self.position = PyQt5.QtCore.QPoint(p[1], p[0])
      
     helpText = (
-        '<i>Hjælp for labirint</i> <br>' 
+        '<i>Hjaelp for labirint</i> <br>' 
         '<b>DU SPILLER MEED TASERNE:</b> <br>' 
-        '&nbsp; &nbsp; <b>piletaster</b> flytter din brik <br>')
+        '&nbsp; &nbsp; <b>piletaster</b> flytter din brik <br>'
+        '&nbsp; &nbsp; <b>space</b> giver dig fart <br>')
     
     @classmethod
     def introText(cls, rich = True):
         if rich:
-            s = '<i>Starter labirint.</i> <br> For hjælp, press <b>H</b>'
+            s = '<i>Starter labirint.</i> <br> For hjaelp, press <b>H</b>'
         else:
-            s = "Starter labirint. For hjælp, press 'H'."
+            s = "Starter labirint. For hjaelp, press 'H'."
         return s
         
     def showHelp(self):
@@ -148,9 +156,7 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
         painter_display.drawPixmap(self.avatarTarget(), self.avatarPix)
         
     def resizeEvent(self, event):
-        """ Triggered by resizing of the widget window. """
-
- 
+        """ Triggered by resizing of the widget window. """    
         zoomWidth = self.width()/self.source.width()
         zoomHeight = self.height()/self.source.height() 
         
@@ -169,24 +175,26 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
         
  
     def avatarTarget(self):
-        
+        '''Here should avatar be drawn.'''
         return PyQt5.QtCore.QRect(
                 self.padding.x() + self.position.x()*self.zoomFactor - self.avatarWidth/2*self.zoomFactor, 
                 self.padding.y() + self.position.y()*self.zoomFactor - self.avatarWidth/2*self.zoomFactor, 
                 self.avatarWidth*self.zoomFactor, self.avatarWidth*self.zoomFactor)
     
     def moveMore(self, direction):
+        ''' Moving faster.'''
         for i in range(self.multiplier):
             self.move(direction)                 
             
     def move(self, direction):
-        
+        '''Moving straigth or diagonally.'''        
         if direction=='UP':
-            if self.layoutImage[self.position.y()-1, self.position.x()] == self.layoutItems['AIR']:
+            free = self.layoutItems['AIR']
+            if self.layoutImage[self.position.y()-1, self.position.x()] == free:
                 self.position.setY(self.position.y()-1)
             else:
-                one = self.layoutImage[self.position.y()-1, self.position.x()-1] == self.layoutItems['AIR']
-                other = self.layoutImage[self.position.y()-1, self.position.x()+1] == self.layoutItems['AIR']
+                one = self.layoutImage[self.position.y()-1, self.position.x()-1] == free
+                other = self.layoutImage[self.position.y()-1, self.position.x()+1] == free
                 if one and not other:
                     self.position.setY(self.position.y()-1)
                     self.position.setX(self.position.x()-1)
@@ -194,11 +202,11 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
                     self.position.setY(self.position.y()-1)
                     self.position.setX(self.position.x()+1)
         elif direction == 'DOWN':
-            if self.layoutImage[self.position.y()+1, self.position.x()] == self.layoutItems['AIR']:
+            if self.layoutImage[self.position.y()+1, self.position.x()] == free:
                 self.position.setY(self.position.y()+1)
             else:
-                one = self.layoutImage[self.position.y()+1, self.position.x()-1] == self.layoutItems['AIR']
-                other = self.layoutImage[self.position.y()+1, self.position.x()+1] == self.layoutItems['AIR']
+                one = self.layoutImage[self.position.y()+1, self.position.x()-1] == free
+                other = self.layoutImage[self.position.y()+1, self.position.x()+1] == free
                 if one and not other:
                     self.position.setY(self.position.y()+1)
                     self.position.setX(self.position.x()-1)
@@ -206,11 +214,11 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
                     self.position.setY(self.position.y()+1)
                     self.position.setX(self.position.x()+1)
         elif direction == 'LEFT':
-            if self.layoutImage[self.position.y(), self.position.x()-1] == self.layoutItems['AIR']:
+            if self.layoutImage[self.position.y(), self.position.x()-1] == free:
                 self.position.setX(self.position.x()-1)
             else:
-                one = self.layoutImage[self.position.y()-1, self.position.x()-1] == self.layoutItems['AIR']
-                other = self.layoutImage[self.position.y()+1, self.position.x()-1] == self.layoutItems['AIR']
+                one = self.layoutImage[self.position.y()-1, self.position.x()-1] == free
+                other = self.layoutImage[self.position.y()+1, self.position.x()-1] == free
                 if one and not other:
                     self.position.setY(self.position.y()-1)
                     self.position.setX(self.position.x()-1)
@@ -218,11 +226,11 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
                     self.position.setY(self.position.y()+1)
                     self.position.setX(self.position.x()-1)
         elif direction == 'RIGHT':
-            if self.layoutImage[self.position.y(), self.position.x()+1] == self.layoutItems['AIR']:
+            if self.layoutImage[self.position.y(), self.position.x()+1] == free:
                 self.position.setX(self.position.x()+1)
             else:
-                one = self.layoutImage[self.position.y()-1, self.position.x()+1] == self.layoutItems['AIR']
-                other = self.layoutImage[self.position.y()+1, self.position.x()+1] == self.layoutItems['AIR']
+                one = self.layoutImage[self.position.y()-1, self.position.x()+1] == free
+                other = self.layoutImage[self.position.y()+1, self.position.x()+1] == free
                 if one and not other:
                     self.position.setY(self.position.y()-1)
                     self.position.setX(self.position.x()+1)
@@ -236,17 +244,24 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
             if not self.spacePressed:
                 self.spacePressed = True
                 self.multiplier = 10
+            elif self.moving is not None:
+                self.moveMore(self.moving)
+                self.update()
         if event.key()==16777235: # uparrow
             self.moveMore('UP')
+            self.moving = 'UP'
             self.update()
         elif event.key()==16777237: # downarrow
             self.moveMore('DOWN')
+            self.moving = 'DOWN'
             self.update()
         if event.key()==16777236: # rightarrow
             self.moveMore('RIGHT')
+            self.moving = 'RIGHT'
             self.update()
         elif event.key()==16777234: # leftarrow
             self.moveMore('LEFT')
+            self.moving = 'LEFT'
             self.update()
         elif event.key()==72: # h        
             if not self.hPressed:
@@ -259,6 +274,14 @@ class Labyrinth(PyQt5.QtWidgets.QWidget):
         if event.key()==72: # h
             self.hideText()
             self.hPressed = False
+        elif event.key == 16777235:
+            self.moving = None
+        elif event.key ==16777237:
+            self.moving = None
+        elif event.key == 16777236:
+            self.moving = None
+        elif event.key == 16777234:
+            self.moving = None
         elif event.key()==32: # space
             self.multiplier = 1
             self.spacePressed = False
@@ -339,11 +362,13 @@ if __name__ == '__main__':
         filename = sys.argv[1]
         ex = Labyrinth(filename)
     else:
-        ex = Labyrinth()
+        top = {'filename' : 'anders.jpg', 'position' : (800,1200)}
         ex = Labyrinth(scenary_filename='toppen_scenary.png', 
                        layout_filename='toppen_layout.png', 
                        avatar_filename='anders.jpg', 
                        start_pos = (960,1183))
+
+ #       ex = Labyrinth()
     sys.exit(app.exec_())  
     
     
